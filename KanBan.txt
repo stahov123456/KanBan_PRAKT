@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Упрощённый Kanban</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacOSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f4f5f7;
+      color: #172b4d;
+      padding: 16px;
+    }
+
+    header {
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 28px;
+      color: #0052cc;
+    }
+
+    .board {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      padding-bottom: 16px;
+      height: calc(100vh - 120px);
+      align-items: flex-start;
+    }
+
+    .column {
+      background: #ebecf0;
+      border-radius: 8px;
+      width: 280px;
+      min-width: 280px;
+      padding: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .column-header {
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #5e6c84;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .column-header span {
+      background: #dfe1e6;
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 12px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(9,45,66,.25);
+      cursor: grab;
+      user-select: none;
+      transition: transform 0.1s;
+    }
+
+    .card:active {
+      cursor: grabbing;
+      transform: scale(1.02);
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #5e6c84;
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+
+    .card-label {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 12px;
+      margin-right: 6px;
+      margin-bottom: 4px;
+    }
+
+    .add-card {
+      background: rgba(0,0,0,0.04);
+      border-radius: 4px;
+      padding: 10px;
+      text-align: center;
+      color: #5e6c84;
+      cursor: pointer;
+      font-size: 14px;
+      margin-top: 12px;
+    }
+
+    .add-card:hover {
+      background: rgba(0,0,0,0.08);
+    }
+
+    .form-add {
+      background: white;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(9,45,66,.25);
+    }
+
+    .form-add textarea {
+      width: 100%;
+      min-height: 60px;
+      padding: 8px;
+      border: 1px solid #dfe1e6;
+      border-radius: 3px;
+      resize: vertical;
+      font-family: inherit;
+      margin-bottom: 8px;
+    }
+
+    .form-add button {
+      background: #0079bf;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .form-add button:hover {
+      background: #026aa7;
+    }
+
+    .form-add .cancel {
+      background: transparent;
+      color: #42526e;
+      margin-left: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Мой упрощённый Kanban</h1>
+</header>
+
+<div class="board" id="board">
+
+  <div class="column" id="todo">
+    <div class="column-header">
+      К выполнению <span id="todo-count">0</span>
+    </div>
+
+    <!-- сюда будут карточки -->
+  </div>
+
+  <div class="column" id="inprogress">
+    <div class="column-header">
+      В работе <span id="inprogress-count">0</span>
+    </div>
+  </div>
+
+  <div class="column" id="done">
+    <div class="column-header">
+      Готово <span id="done-count">0</span>
+    </div>
+  </div>
+
+</div>
+
+<div style="text-align:center; margin-top:24px; color:#6b778c; font-size:13px;">
+  Данные не сохраняются после обновления страницы • Перетаскивайте карточки • Двойной клик — редактировать
+</div>
+
+<script>
+// ================================================
+// Основные функции
+// ================================================
+
+const columns = {
+  todo: document.getElementById('todo'),
+  inprogress: document.getElementById('inprogress'),
+  done: document.getElementById('done')
+};
+
+const counters = {
+  todo: document.getElementById('todo-count'),
+  inprogress: document.getElementById('inprogress-count'),
+  done: document.getElementById('done-count')
+};
+
+let draggedCard = null;
+
+// Обновление счётчиков
+function updateCounters() {
+  Object.keys(columns).forEach(key => {
+    counters[key].textContent = columns[key].querySelectorAll('.card').length;
+  });
+}
+
+// Создание новой карточки
+function createCard(text = "Новая задача", desc = "", columnId = "todo") {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.draggable = true;
+
+  card.innerHTML = `
+    <div class="card-title">${text}</div>
+    ${desc ? `<div class="card-desc">${desc}</div>` : ''}
+  `;
+
+  // Двойной клик — редактирование
+  card.addEventListener('dblclick', () => {
+    const title = prompt("Название задачи:", card.querySelector('.card-title').textContent);
+    if (title !== null) {
+      card.querySelector('.card-title').textContent = title;
+    }
+    const description = prompt("Описание (можно оставить пустым):", card.querySelector('.card-desc')?.textContent || "");
+    if (description !== null) {
+      let descEl = card.querySelector('.card-desc');
+      if (description.trim()) {
+        if (!descEl) {
+          descEl = document.createElement('div');
+          descEl.className = 'card-desc';
+          card.appendChild(descEl);
+        }
+        descEl.textContent = description;
+      } else if (descEl) {
+        descEl.remove();
+      }
+    }
+  });
+
+  // События перетаскивания
+  card.addEventListener('dragstart', (e) => {
+    draggedCard = card;
+    setTimeout(() => card.style.opacity = '0.4', 0);
+  });
+
+  card.addEventListener('dragend', () => {
+    setTimeout(() => {
+      card.style.opacity = '1';
+      draggedCard = null;
+    }, 0);
+  });
+
+  // Добавляем карточку в нужную колонку
+  columns[columnId].appendChild(card);
+  updateCounters();
+  return card;
+}
+
+// Добавление новой задачи в колонку
+function addNewCardToColumn(columnId) {
+  const form = document.createElement('div');
+  form.className = 'form-add';
+  form.innerHTML = `
+    <textarea placeholder="Что нужно сделать?" autofocus></textarea>
+    <button>Добавить</button>
+    <button class="cancel">Отмена</button>
+  `;
+
+  const textarea = form.querySelector('textarea');
+  const addBtn = form.querySelector('button');
+  const cancelBtn = form.querySelector('.cancel');
+
+  addBtn.onclick = () => {
+    const text = textarea.value.trim();
+    if (text) {
+      createCard(text, "", columnId);
+    }
+    form.remove();
+  };
+
+  cancelBtn.onclick = () => form.remove();
+  textarea.onkeydown = e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      addBtn.click();
+    }
+    if (e.key === 'Escape') form.remove();
+  };
+
+  columns[columnId].appendChild(form);
+  textarea.focus();
+}
+
+// Инициализация — добавляем кнопки "Добавить карточку"
+Object.keys(columns).forEach(key => {
+  const addBtn = document.createElement('div');
+  addBtn.className = 'add-card';
+  addBtn.textContent = '+ Добавить карточку';
+  addBtn.onclick = () => addNewCardToColumn(key);
+  columns[key].appendChild(addBtn);
+
+  // Поддержка drag & drop для колонок
+  columns[key].addEventListener('dragover', e => {
+    e.preventDefault();
+    const afterElement = getDragAfterElement(columns[key], e.clientY);
+    const dragging = document.querySelector('.card[style*="opacity: 0.4"]') || draggedCard;
+    if (afterElement == null) {
+      columns[key].insertBefore(dragging, columns[key].querySelector('.add-card'));
+    } else {
+      columns[key].insertBefore(dragging, afterElement);
+    }
+  });
+
+  columns[key].addEventListener('drop', e => {
+    e.preventDefault();
+    updateCounters();
+  });
+});
+
+// Вспомогательная функция — куда вставить карточку при drop
+function getDragAfterElement(column, y) {
+  const draggableElements = [...column.querySelectorAll('.card:not([style*="opacity"])')];
+
+  return draggableElements.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset: offset, element: child };
+    } else {
+      return closest;
+    }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+// Можно сразу добавить пару примеров (опционально)
+createCard("Подготовить структуру диплома", "Разделы: введение, анализ, реализация", "todo");
+createCard("Сделать макет в Figma", "", "todo");
+createCard("Написать плагин Kanban", "На WP REST API + React", "inprogress");
+
+</script>
+</body>
+</html>
